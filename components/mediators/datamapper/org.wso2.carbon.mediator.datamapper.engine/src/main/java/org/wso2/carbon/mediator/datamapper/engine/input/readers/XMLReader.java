@@ -235,6 +235,7 @@ public class XMLReader extends DefaultHandler implements Reader {
             String elementType = getInputSchema().getElementTypeByName(schemaElementList);
             localName = getNamespaceAddedFieldName(uri, localName);
             if (localName.equals(getInputSchema().getName())) {
+                endUnclosedArrayElements(uri, localName);
                 sendObjectEndEvent(localName);
             } else if (STRING_ELEMENT_TYPE.equals(elementType)) {
                 sendFieldEvent(localName, tempFieldValue, STRING_ELEMENT_TYPE);
@@ -247,15 +248,7 @@ public class XMLReader extends DefaultHandler implements Reader {
             } else if (ARRAY_ELEMENT_TYPE.equals(elementType)) {
                 sendObjectEndEvent(localName);
             } else if (OBJECT_ELEMENT_TYPE.equals(elementType)) {
-                while (!getEventStack().isEmpty()) {
-                    ReaderEvent stackElement = getEventStack().peek();
-                    if (ReaderEventType.ARRAY_START.equals(stackElement.getEventType())) {
-                        schemaElementList.add(new SchemaElement(stackElement.getName(), uri));
-                        sendArrayEndEvent(stackElement.getName());
-                    } else {
-                        break;
-                    }
-                }
+                endUnclosedArrayElements(uri, localName);
                 sendObjectEndEvent(localName);
             }
         } catch (IOException | JSException e) {
@@ -266,6 +259,19 @@ public class XMLReader extends DefaultHandler implements Reader {
             throw new SAXException(e.getMessage());
         } catch (ReaderException e) {
             throw new SAXException(e.getMessage());
+        }
+    }
+
+    private void endUnclosedArrayElements(String uri, String localName)
+            throws IOException, JSException, SchemaException, ReaderException {
+        while (!getEventStack().isEmpty()) {
+            ReaderEvent stackElement = getEventStack().peek();
+            if (ReaderEventType.ARRAY_START.equals(stackElement.getEventType())) {
+                schemaElementList.add(new SchemaElement(stackElement.getName(), uri));
+                sendArrayEndEvent(stackElement.getName());
+            } else {
+                break;
+            }
         }
     }
 
