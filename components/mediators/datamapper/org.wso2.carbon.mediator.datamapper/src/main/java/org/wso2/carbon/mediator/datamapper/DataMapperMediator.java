@@ -51,8 +51,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
-import static org.wso2.carbon.mediator.datamapper.engine.utils.DataMapperEngineConstants
-        .ORG_APACHE_SYNAPSE_DATAMAPPER_EXECUTOR_POOL_SIZE;
+import static org.wso2.carbon.mediator.datamapper.engine.utils.DataMapperEngineConstants.ORG_APACHE_SYNAPSE_DATAMAPPER_EXECUTOR_POOL_SIZE;
 
 /**
  * By using the input schema, output schema and mapping configuration,
@@ -61,13 +60,34 @@ import static org.wso2.carbon.mediator.datamapper.engine.utils.DataMapperEngineC
  */
 public class DataMapperMediator extends AbstractMediator implements ManagedLifecycle {
 
+    private static final Log log = LogFactory.getLog(DataMapperMediator.class);
     private Value mappingConfigurationKey = null;
     private Value inputSchemaKey = null;
     private Value outputSchemaKey = null;
     private String inputType = null;
     private String outputType = null;
     private MappingResource mappingResource = null;
-    private static final Log log = LogFactory.getLog(DataMapperMediator.class);
+
+    /**
+     * Returns registry resources as input streams to create the MappingResourceLoader object
+     *
+     * @param synCtx Message context
+     * @param key    registry key
+     * @return mapping configuration, inputSchema and outputSchema as inputStreams
+     */
+    private static InputStream getRegistryResource(MessageContext synCtx, String key) {
+        InputStream inputStream = null;
+        Object entry = synCtx.getEntry(key);
+        if (entry instanceof OMTextImpl) {
+            if (log.isDebugEnabled()) {
+                log.debug("Value for the key is ");
+            }
+            OMTextImpl text = (OMTextImpl) entry;
+            String content = text.getText();
+            inputStream = new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8));
+        }
+        return inputStream;
+    }
 
     /**
      * Gets the key which is used to pick the mapping configuration from the
@@ -181,7 +201,8 @@ public class DataMapperMediator extends AbstractMediator implements ManagedLifec
      * @param synCtx current message for the mediation
      * @return true if mediation happened successfully else false.
      */
-    @Override public boolean mediate(MessageContext synCtx) {
+    @Override
+    public boolean mediate(MessageContext synCtx) {
 
         SynapseLog synLog = getLog(synCtx);
 
@@ -233,18 +254,95 @@ public class DataMapperMediator extends AbstractMediator implements ManagedLifec
      * @param inSchemaKey registry location of the input schema
      */
     private void transform(MessageContext synCtx, String configKey, String inSchemaKey) {
+        OMElement outputContent = null;
+        String inputParentTagName = "employees";
+        String outputParentTagName = "engineers";
+        int numChunks = 2;
+        String outputResult = null;
+        String namespaceURI = "http://wso2.employee.info", prefix = "ns";
         try {
 
             String dmExecutorPoolSize = SynapsePropertiesLoader
                     .getPropertyValue(ORG_APACHE_SYNAPSE_DATAMAPPER_EXECUTOR_POOL_SIZE, null);
 
-            MappingHandler mappingHandler = new MappingHandler(mappingResource, inputType, outputType,
-                    dmExecutorPoolSize);
+            if (inputParentTagName != "") {
+                CombineXMLFileChunks combineXMLFileChunks = null;
+                CombineJSONFileChunks jsonFileChunks = null;
 
-            //execute mapping on the input stream
-            String outputResult = mappingHandler
-                    .doMap(getInputStream(synCtx, inputType, mappingResource.getInputSchema().getName()));
+                if (InputOutputDataType.XML.toString().equals(inputType)) {
 
+                    DivideXMLFileToChunks xmlFileToChunks = new DivideXMLFileToChunks(synCtx, inputParentTagName,
+                            namespaceURI, prefix, numChunks);
+
+                    while (xmlFileToChunks.hasNext()) {
+                        MappingHandler mappingHandler = new MappingHandler(mappingResource, inputType, outputType,
+                                dmExecutorPoolSize);
+                        //execute mapping on the input stream
+                        String outputString = mappingHandler.doMap(getInputStream(xmlFileToChunks.next(), inputType,
+                                mappingResource.getInputSchema().getName()));
+                        if (InputOutputDataType.XML.toString().equals(outputType)) {
+                            outputContent = AXIOMUtil.stringToOM(outputString);
+                            if (combineXMLFileChunks == null) {
+                                combineXMLFileChunks = new CombineXMLFileChunks(outputContent, outputParentTagName);
+                            } else {
+                                combineXMLFileChunks.add(outputContent);
+                            }
+                        } else if (InputOutputDataType.JSON.toString().equals(outputType)) {
+                            if (jsonFileChunks == null) {
+                                jsonFileChunks = new CombineJSONFileChunks(outputString, outputParentTagName);
+
+                            } else {
+                                jsonFileChunks.add(outputString);
+                            }
+                        }
+
+                    }
+                    if (combineXMLFileChunks != null) {
+                        outputResult = combineXMLFileChunks.getRoot().toString();
+                    } else if (jsonFileChunks != null) {
+                        outputResult = jsonFileChunks.getRoot();
+                    }
+                } else if (InputOutputDataType.JSON.toString().equals(inputType)) {
+                    inputParentTagName = "employee";
+                    outputParentTagName = "employee";
+                    DivideJSONFileToChunks jsonFileToChunks = new DivideJSONFileToChunks(
+                            getInputStream(synCtx, inputType, mappingResource.getInputSchema().getName()),
+                            inputParentTagName, numChunks);
+                    while (jsonFileToChunks.hasNext()) {
+                        MappingHandler mappingHandler = new MappingHandler(mappingResource, inputType, outputType,
+                                dmExecutorPoolSize);
+                        String outputString = mappingHandler.doMap(jsonFileToChunks.next());
+                        if (InputOutputDataType.XML.toString().equals(outputType)) {
+                            outputContent = AXIOMUtil.stringToOM(outputString);
+                            if (combineXMLFileChunks == null) {
+                                combineXMLFileChunks = new CombineXMLFileChunks(outputContent, outputParentTagName);
+                            } else {
+                                combineXMLFileChunks.add(outputContent);
+                            }
+                        } else if (InputOutputDataType.JSON.toString().equals(outputType)) {
+                            if (jsonFileChunks == null) {
+                                jsonFileChunks = new CombineJSONFileChunks(outputString, outputParentTagName);
+
+                            } else {
+                                jsonFileChunks.add(outputString);
+                            }
+                        }
+                    }
+                    if (combineXMLFileChunks != null) {
+                        outputResult = combineXMLFileChunks.getRoot().toString();
+                    } else if (jsonFileChunks != null) {
+                        outputResult = jsonFileChunks.getRoot();
+                    }
+                }
+            } else {
+
+                MappingHandler mappingHandler = new MappingHandler(mappingResource, inputType, outputType,
+                        dmExecutorPoolSize);
+
+                //execute mapping on the input stream
+                outputResult = mappingHandler
+                        .doMap(getInputStream(synCtx, inputType, mappingResource.getInputSchema().getName()));
+            }
             if (InputOutputDataType.XML.toString().equals(outputType)) {
                 OMElement outputMessage = AXIOMUtil.stringToOM(outputResult);
                 if (outputMessage != null) {
@@ -318,18 +416,21 @@ public class DataMapperMediator extends AbstractMediator implements ManagedLifec
      * @return true if the DataMapperMediator is intending to interact with the
      * message context
      */
-    @Override public boolean isContentAware() {
+    @Override
+    public boolean isContentAware() {
         return true;
     }
 
-    @Override public void init(SynapseEnvironment se) {
+    @Override
+    public void init(SynapseEnvironment se) {
 
     }
 
     /**
      * destroy the generated unique ID for the DataMapperMediator instance
      */
-    @Override public void destroy() {
+    @Override
+    public void destroy() {
     }
 
     /**
@@ -369,26 +470,5 @@ public class DataMapperMediator extends AbstractMediator implements ManagedLifec
             handleException(e.getMessage(), synCtx);
         }
         return null;
-    }
-
-    /**
-     * Returns registry resources as input streams to create the MappingResourceLoader object
-     *
-     * @param synCtx Message context
-     * @param key    registry key
-     * @return mapping configuration, inputSchema and outputSchema as inputStreams
-     */
-    private static InputStream getRegistryResource(MessageContext synCtx, String key) {
-        InputStream inputStream = null;
-        Object entry = synCtx.getEntry(key);
-        if (entry instanceof OMTextImpl) {
-            if (log.isDebugEnabled()) {
-                log.debug("Value for the key is ");
-            }
-            OMTextImpl text = (OMTextImpl) entry;
-            String content = text.getText();
-            inputStream = new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8));
-        }
-        return inputStream;
     }
 }
