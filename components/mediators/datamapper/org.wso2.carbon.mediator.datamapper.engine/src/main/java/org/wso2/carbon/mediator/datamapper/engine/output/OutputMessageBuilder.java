@@ -51,32 +51,32 @@ public class OutputMessageBuilder {
 
     public void notifyEvent(ReaderEvent readerEvent) throws SchemaException, WriterException {
         switch (readerEvent.getEventType()) {
-            case OBJECT_START:
-                outputWriter.writeStartObject(readerEvent.getName());
-                break;
-            case FIELD:
-                outputWriter.writeField(readerEvent.getName(), readerEvent.getValue());
-                break;
-            case OBJECT_END:
-                outputWriter.writeEndObject(readerEvent.getName());
-                break;
-            case TERMINATE:
-                outputVariableNotifier.notifyOutputVariable(outputWriter.terminateMessageBuilding());
-                break;
-            case ARRAY_START:
-                outputWriter.writeStartArray();
-                break;
-            case ARRAY_END:
-                outputWriter.writeEndArray();
-                break;
-            case ANONYMOUS_OBJECT_START:
-                outputWriter.writeStartAnonymousObject();
-                break;
+        case OBJECT_START:
+            outputWriter.writeStartObject(readerEvent.getName());
+            break;
+        case FIELD:
+            outputWriter.writeField(readerEvent.getName(), readerEvent.getValue());
+            break;
+        case OBJECT_END:
+            outputWriter.writeEndObject(readerEvent.getName());
+            break;
+        case TERMINATE:
+            outputVariableNotifier.notifyOutputVariable(outputWriter.terminateMessageBuilding());
+            break;
+        case ARRAY_START:
+            outputWriter.writeStartArray();
+            break;
+        case ARRAY_END:
+            outputWriter.writeEndArray();
+            break;
+        case ANONYMOUS_OBJECT_START:
+            outputWriter.writeStartAnonymousObject();
+            break;
         case PRIMITIVE:
             outputWriter.writePrimitive(readerEvent.getValue());
             break;
-            default:
-                throw new IllegalArgumentException("Unsupported reader event found : " + readerEvent.getEventType());
+        default:
+            throw new IllegalArgumentException("Unsupported reader event found : " + readerEvent.getEventType());
         }
     }
 

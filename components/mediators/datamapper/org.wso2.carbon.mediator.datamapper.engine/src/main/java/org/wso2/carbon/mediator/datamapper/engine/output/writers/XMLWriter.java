@@ -47,6 +47,7 @@ public class XMLWriter implements Writer {
     private String latestElementName;
     private Map<String, String> namespaceMap;
     private static final String NAMESPACE_SEPARATOR = "_";
+    private boolean firstPrimitive = true;
 
     public XMLWriter(Schema outputSchema) throws SchemaException, WriterException {
         this.outputSchema = outputSchema;
@@ -73,6 +74,7 @@ public class XMLWriter implements Writer {
     }
 
     @Override public void writeStartObject(String name) throws WriterException {
+        firstPrimitive=true;
         try {
             if (name.endsWith(SCHEMA_ATTRIBUTE_PARENT_ELEMENT_POSTFIX)) {
                 latestElementName = name.substring(0, name.lastIndexOf(SCHEMA_ATTRIBUTE_PARENT_ELEMENT_POSTFIX));
@@ -87,6 +89,7 @@ public class XMLWriter implements Writer {
     }
 
     @Override public void writeField(String name, Object fieldValue) throws WriterException {
+        firstPrimitive=true;
         try {
             //with in a element attributes must come first before any of other field values
             if (fieldValue != null) {
@@ -101,8 +104,7 @@ public class XMLWriter implements Writer {
                                 Map.Entry<String, String> entry = entryIterator.next();
                                 if (attributeNameArray[0].equals(entry.getValue())) {
                                     xmlStreamWriter.writeAttribute(entry.getKey(),
-                                                                   attributeNameArray[attributeNameArray.length - 1],
-                                                                   value);
+                                            attributeNameArray[attributeNameArray.length - 1], value);
                                 }
                             }
                         } else {
@@ -111,10 +113,7 @@ public class XMLWriter implements Writer {
                     } else {
                         xmlStreamWriter.writeAttribute(attributeNameWithNamespace, value);
                     }
-                } else if (name.equals(latestElementName)) {
-                    xmlStreamWriter.writeCharacters(value);
-                    xmlStreamWriter.writeEndElement();
-                } else {
+                }else {
                     writeStartElement(name, xmlStreamWriter);
                     xmlStreamWriter.writeCharacters(value);
                     xmlStreamWriter.writeEndElement();
@@ -139,6 +138,7 @@ public class XMLWriter implements Writer {
     }
 
     @Override public void writeEndObject(String objectName) throws WriterException {
+        firstPrimitive=true;
         try {
             xmlStreamWriter.writeEndElement();
         } catch (XMLStreamException e) {
@@ -147,6 +147,7 @@ public class XMLWriter implements Writer {
     }
 
     @Override public String terminateMessageBuilding() throws WriterException {
+        firstPrimitive=true;
         try {
             xmlStreamWriter.writeEndElement();
             xmlStreamWriter.flush();
@@ -158,14 +159,17 @@ public class XMLWriter implements Writer {
     }
 
     @Override public void writeStartArray() {
+        firstPrimitive=true;
         arrayElementStack.push(latestElementName);
     }
 
     @Override public void writeEndArray() {
+        firstPrimitive=true;
         arrayElementStack.pop();
     }
 
     @Override public void writeStartAnonymousObject() throws WriterException {
+        firstPrimitive=true;
         try {
             writeStartElement(arrayElementStack.peek(), xmlStreamWriter);
         } catch (XMLStreamException e) {
@@ -174,8 +178,17 @@ public class XMLWriter implements Writer {
     }
 
     @Override public void writePrimitive(Object value) throws WriterException {
-        //TODO implement write primitive
-        writeField(latestElementName,value);
+        try {
+            if(!firstPrimitive) {
+                writeStartElement(latestElementName, xmlStreamWriter);
+            } else{
+                firstPrimitive=false;
+            }
+            xmlStreamWriter.writeCharacters((String) value);
+            xmlStreamWriter.writeEndElement();
+        } catch (XMLStreamException e) {
+            log.error(e.getMessage(),e);
+        }
     }
 
     private void writeStartElement(String name, XMLStreamWriter xMLStreamWriter) throws XMLStreamException {

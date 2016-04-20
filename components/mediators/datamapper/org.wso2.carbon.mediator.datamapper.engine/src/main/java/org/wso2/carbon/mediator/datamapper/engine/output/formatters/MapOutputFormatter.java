@@ -72,6 +72,7 @@ public class MapOutputFormatter implements Formatter {
         ArrayList<String> tempKeys = new ArrayList<>();
         tempKeys.addAll(mapKeys);
         //Attributes should come first than other fields. So attribute should be listed first
+        //This sorting is only needed if the output type is xml
         for (String key : mapKeys) {
             if (key.contains(SCHEMA_ATTRIBUTE_FIELD_PREFIX) && tempKeys.contains(key)) {
                 orderedKeyList.addFirst(key);
@@ -117,7 +118,8 @@ public class MapOutputFormatter implements Formatter {
                 } else {
                     sendObjectStartEvent(key);
                     traverseMap((Map<String, Object>) value);
-                    if (!key.endsWith(SCHEMA_ATTRIBUTE_PARENT_ELEMENT_POSTFIX)) {
+                    if (!key.endsWith(SCHEMA_ATTRIBUTE_PARENT_ELEMENT_POSTFIX) &&
+                            !isMapContainArray(((Map<String, Object>) value).keySet())) {
                         sendObjectEndEvent(key);
                     }
                 }
