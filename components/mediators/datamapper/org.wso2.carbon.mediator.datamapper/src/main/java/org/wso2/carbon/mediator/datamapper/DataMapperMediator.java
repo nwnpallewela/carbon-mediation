@@ -260,14 +260,14 @@ public class DataMapperMediator extends AbstractMediator implements ManagedLifec
         int numChunks = 2;
         String outputResult = null;
         String namespaceURI = "http://wso2.employee.info", prefix = "ns";
+        CombineXMLFileChunks combineXMLFileChunks = null;
+        CombineJSONFileChunks jsonFileChunks = null;
         try {
 
             String dmExecutorPoolSize = SynapsePropertiesLoader
                     .getPropertyValue(ORG_APACHE_SYNAPSE_DATAMAPPER_EXECUTOR_POOL_SIZE, null);
 
             if (inputParentTagName != "") {
-                CombineXMLFileChunks combineXMLFileChunks = null;
-                CombineJSONFileChunks jsonFileChunks = null;
 
                 if (InputOutputDataType.XML.toString().equals(inputType)) {
 
@@ -297,9 +297,7 @@ public class DataMapperMediator extends AbstractMediator implements ManagedLifec
                         }
 
                     }
-                    if (combineXMLFileChunks != null) {
-                        outputResult = combineXMLFileChunks.getRoot().toString();
-                    } else if (jsonFileChunks != null) {
+                    if (jsonFileChunks != null) {
                         outputResult = jsonFileChunks.getRoot();
                     }
                 } else if (InputOutputDataType.JSON.toString().equals(inputType)) {
@@ -328,9 +326,7 @@ public class DataMapperMediator extends AbstractMediator implements ManagedLifec
                             }
                         }
                     }
-                    if (combineXMLFileChunks != null) {
-                        outputResult = combineXMLFileChunks.getRoot().toString();
-                    } else if (jsonFileChunks != null) {
+                    if (jsonFileChunks != null) {
                         outputResult = jsonFileChunks.getRoot();
                     }
                 }
@@ -344,7 +340,12 @@ public class DataMapperMediator extends AbstractMediator implements ManagedLifec
                         .doMap(getInputStream(synCtx, inputType, mappingResource.getInputSchema().getName()));
             }
             if (InputOutputDataType.XML.toString().equals(outputType)) {
-                OMElement outputMessage = AXIOMUtil.stringToOM(outputResult);
+                OMElement outputMessage;
+                if (combineXMLFileChunks != null) {
+                    outputMessage = combineXMLFileChunks.getRoot();
+                } else {
+                    outputMessage = AXIOMUtil.stringToOM(outputResult);
+                }
                 if (outputMessage != null) {
                     if (log.isDebugEnabled()) {
                         log.debug("Output message received ");
