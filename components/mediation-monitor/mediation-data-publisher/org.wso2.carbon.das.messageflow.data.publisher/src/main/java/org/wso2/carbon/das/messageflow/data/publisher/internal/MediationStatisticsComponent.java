@@ -1,30 +1,32 @@
-/*
- * Copyright 2004,2005 The Apache Software Foundation.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+/**
+ * Copyright (c) 2016, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+ * <p/>
+ * WSO2 Inc. licenses this file to you under the Apache License,
+ * Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License.
  * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * <p/>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p/>
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package org.wso2.carbon.das.messageflow.data.publisher.internal;
 
-import org.apache.axis2.context.ConfigurationContext;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.synapse.messageflowtracer.processors.MessageFlowTracingDataCollector;
+import org.apache.synapse.aspects.flow.statistics.collectors.RuntimeStatisticCollector;
 import org.osgi.framework.ServiceRegistration;
 import org.osgi.service.component.ComponentContext;
 import org.wso2.carbon.context.PrivilegedCarbonContext;
+import org.wso2.carbon.das.messageflow.data.publisher.conf.PublisherProfileManager;
 import org.wso2.carbon.das.messageflow.data.publisher.conf.RegistryPersistenceManager;
-import org.wso2.carbon.das.messageflow.data.publisher.observer.DASMediationStatisticsObserver;
-import org.wso2.carbon.das.messageflow.data.publisher.services.DASMessageFlowPublisherAdmin;
+import org.wso2.carbon.das.messageflow.data.publisher.observer.DASMediationFlowObserver;
+import org.wso2.carbon.das.messageflow.data.publisher.services.MediationConfigReporterThread;
 import org.wso2.carbon.das.messageflow.data.publisher.util.PublisherUtils;
 import org.wso2.carbon.mediation.initializer.services.SynapseEnvironmentService;
 import org.wso2.carbon.mediation.initializer.services.SynapseRegistrationsService;
@@ -32,8 +34,8 @@ import org.wso2.carbon.registry.core.service.RegistryService;
 import org.wso2.carbon.utils.ConfigurationContextService;
 import org.wso2.carbon.utils.multitenancy.MultitenantConstants;
 
-import org.wso2.carbon.das.messageflow.data.publisher.data.MessageFlowTraceObserverStore;
-import org.wso2.carbon.das.messageflow.data.publisher.services.MessageFlowTraceReporterThread;
+import org.wso2.carbon.das.messageflow.data.publisher.data.MessageFlowObserverStore;
+import org.wso2.carbon.das.messageflow.data.publisher.services.MessageFlowReporterThread;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -60,13 +62,15 @@ public class MediationStatisticsComponent {
 
     private static final Log log = LogFactory.getLog(MediationStatisticsComponent.class);
 
-    private static boolean flowTracingEnabled;
+    private static boolean flowStatisticsEnabled;
 
     private boolean activated = false;
 
-    private Map<Integer, MessageFlowTraceObserverStore> stores = new HashMap<Integer, MessageFlowTraceObserverStore>();
+    private Map<Integer, MessageFlowObserverStore> stores = new HashMap<Integer, MessageFlowObserverStore>();
 
-    private Map<Integer, MessageFlowTraceReporterThread> reporterThreads = new HashMap<Integer, MessageFlowTraceReporterThread>();
+    private Map<Integer, MessageFlowReporterThread> reporterThreads = new HashMap<Integer, MessageFlowReporterThread>();
+
+    private Map<Integer, MediationConfigReporterThread> configReporterThreads = new HashMap<Integer, MediationConfigReporterThread>();
 
     private Map<Integer, SynapseEnvironmentService> synapseEnvServices = new HashMap<Integer, SynapseEnvironmentService>();
 
@@ -77,9 +81,10 @@ public class MediationStatisticsComponent {
 
         this.compCtx = ctxt;
 
+        // Check whether statistic collecting is globally enabled
         checkPublishingEnabled();
 
-        if (!flowTracingEnabled){
+        if (!flowStatisticsEnabled){
             activated = false;
             if (log.isDebugEnabled()) {
                 log.debug("DAS Message Flow Publishing Component not-activated");
@@ -91,32 +96,22 @@ public class MediationStatisticsComponent {
 
         SynapseEnvironmentService synapseEnvService = synapseEnvServices.get(tenantId);
 
-        createObserversStore(synapseEnvService);
-        MessageFlowTraceObserverStore observerStore = stores.get(tenantId);
+        // Create list of profiles for data publishers
+        createPublisherProfiles();
 
-
-        DASMessageFlowPublisherAdmin dasMediationStatsPublisherAdmin = new DASMessageFlowPublisherAdmin();
-        PublisherUtils.setMediationStatPublisherAdmin(dasMediationStatsPublisherAdmin);
-
-        if (observerStore != null) {
-            DASMediationStatisticsObserver observer = new DASMediationStatisticsObserver();
-            observerStore.registerObserver(observer);
-            observer.setTenantId(tenantId);
-            // 'MediationStat service' will be deployed per tenant (cardinality="1..n")
-
-            log.debug("Registering  Observer for tenant: " + tenantId);
-        } else {
-            log.error("Can't register an observer for MessageFlowTraceObserverStore. " );
-        }
-
-        //Load previously saved configurations
-        new RegistryPersistenceManager().load(tenantId);
-
+        // Create observer store for super-tenant
+        createStores(synapseEnvService);
 
         activated = true;
+
         if (log.isDebugEnabled()) {
             log.debug("DAS Message Flow Publishing Component activate");
         }
+    }
+
+    private void createPublisherProfiles() {
+        int tenantId = PrivilegedCarbonContext.getThreadLocalCarbonContext().getTenantId();
+        new PublisherProfileManager().loadTenantPublisherProfilesFromRegistry(tenantId);
     }
 
 
@@ -125,29 +120,46 @@ public class MediationStatisticsComponent {
      *
      * @param synEnvService information about synapse runtime
      */
-    private void createObserversStore(SynapseEnvironmentService synEnvService) {
+    private void createStores(SynapseEnvironmentService synEnvService) {
         int tenantId = PrivilegedCarbonContext.getThreadLocalCarbonContext().getTenantId();
-        ConfigurationContext cfgCtx = synEnvService.getConfigurationContext();
 
-        MessageFlowTraceObserverStore observerStore = new MessageFlowTraceObserverStore();
+        MessageFlowObserverStore observerStore = new MessageFlowObserverStore();
 
-        MessageFlowTraceReporterThread reporterThread = new MessageFlowTraceReporterThread(synEnvService, observerStore);
+        MessageFlowReporterThread reporterThread = new MessageFlowReporterThread(synEnvService, observerStore);
         reporterThread.setName("mediation-flow-tracer-" + tenantId);
         reporterThread.start();
         if (log.isDebugEnabled()) {
             log.debug("Registering the new mediation flow tracer service");
         }
         reporterThreads.put(tenantId, reporterThread);
+
+        DASMediationFlowObserver dasObserver = new DASMediationFlowObserver();
+        observerStore.registerObserver(dasObserver);
+        dasObserver.setTenantId(tenantId);
+        // 'MediationStat service' will be deployed per tenant (cardinality="1..n")
+
+        if (log.isDebugEnabled()) {
+            log.debug("Registering  Observer for tenant: " + tenantId);
+        }
         stores.put(tenantId, observerStore);
+
+        // Adding configuration reporting thread
+        MediationConfigReporterThread configReporterThread = new MediationConfigReporterThread(synEnvService);
+        configReporterThread.setName("mediation-config-reporter-" + tenantId);
+        configReporterThread.start();
+        if (log.isDebugEnabled()) {
+            log.debug("Registering the new mediation configuration reporter thread");
+        }
+        configReporterThreads.put(tenantId, configReporterThread);
     }
 
     protected void deactivate(ComponentContext ctxt) {
         // unregistered DASMediationStatsPublisherAdmin service from the OSGi Service Register.
 //        statAdminServiceRegistration.unregister();
 
-        Set<Map.Entry<Integer, MessageFlowTraceReporterThread>> threadEntries = reporterThreads.entrySet();
-        for (Map.Entry<Integer, MessageFlowTraceReporterThread> threadEntry : threadEntries) {
-            MessageFlowTraceReporterThread reporterThread = threadEntry.getValue();
+        Set<Map.Entry<Integer, MessageFlowReporterThread>> threadEntries = reporterThreads.entrySet();
+        for (Map.Entry<Integer, MessageFlowReporterThread> threadEntry : threadEntries) {
+            MessageFlowReporterThread reporterThread = threadEntry.getValue();
             if (reporterThread != null && reporterThread.isAlive()) {
                 reporterThread.shutdown();
                 reporterThread.interrupt(); // This should wake up the thread if it is asleep
@@ -168,6 +180,28 @@ public class MediationStatisticsComponent {
                 }
             }
         }
+
+        // Stops config reporting threads
+        for(MediationConfigReporterThread configReporterThread : configReporterThreads.values()) {
+            if (configReporterThread != null && configReporterThread.isAlive()) {
+                configReporterThread.shutdown();
+                configReporterThread.interrupt();
+
+                // Wait until the thread is gracefully terminates
+                while (configReporterThread.isAlive()) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("Waiting for the mediation config reporter thread to terminate");
+                    }
+
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException ignore) {
+
+                    }
+                }
+            }
+        }
+
 
         if (log.isDebugEnabled()) {
             log.debug("DAS service statistics data publisher bundle is deactivated");
@@ -220,7 +254,8 @@ public class MediationStatisticsComponent {
             if (activated && compCtx != null) {
                 SynapseEnvironmentService synEnvSvc = (SynapseEnvironmentService) compCtx.getBundleContext().getService(
                         synEnvSvcRegistration.getReference());
-                createObserversStore(synEnvSvc);
+                createPublisherProfiles();
+                createStores(synEnvSvc);
             }
         } catch (Throwable t) {
             log.fatal("Error occurred at the osgi service method", t);
@@ -230,7 +265,7 @@ public class MediationStatisticsComponent {
     protected void unsetSynapseRegistrationsService(SynapseRegistrationsService registrationsService) {
         try {
             int tenantId = registrationsService.getTenantId();
-            MessageFlowTraceReporterThread reporterThread = reporterThreads.get(tenantId);
+            MessageFlowReporterThread reporterThread = reporterThreads.get(tenantId);
             if (reporterThread != null && reporterThread.isAlive()) {
                 reporterThread.shutdown();
                 reporterThread.interrupt(); // This should wake up the thread if it is asleep
@@ -251,15 +286,15 @@ public class MediationStatisticsComponent {
                 }
             }
         } catch (Throwable t) {
-            log.error("Fatal error occured at the osgi service method", t);
+            log.error("Fatal error occurred at the osgi service method", t);
         }
     }
 
     private void checkPublishingEnabled() {
-        flowTracingEnabled = MessageFlowTracingDataCollector.isMessageFlowTracingEnabled();
-        PublisherUtils.setTraceDataCollectingEnabled(flowTracingEnabled);
+        flowStatisticsEnabled = RuntimeStatisticCollector.isStatisticsEnabled();
+        PublisherUtils.setTraceDataCollectingEnabled(flowStatisticsEnabled);
 
-        if (!flowTracingEnabled) {
+        if (!flowStatisticsEnabled) {
             log.info("Statistic Reporter is Disabled");
         }
 

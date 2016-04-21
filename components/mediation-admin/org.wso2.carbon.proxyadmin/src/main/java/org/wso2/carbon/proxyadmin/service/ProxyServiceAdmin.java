@@ -166,7 +166,17 @@ public class ProxyServiceAdmin extends AbstractServiceBusAdmin {
             lock.lock();
 
             ProxyService proxy = getSynapseConfiguration().getProxyService(proxyName);
-            proxy.setTraceState(SynapseConstants.TRACING_ON);
+            if (proxy != null) {
+                if (proxy.getAspectConfiguration() == null) {
+                    AspectConfiguration config = new AspectConfiguration(proxyName);
+                    config.enableTracing();
+                    config.enableStatistics(); // Tracing needs statistics
+                    proxy.configure(config);
+                } else {
+                    proxy.getAspectConfiguration().enableTracing();
+                    proxy.getAspectConfiguration().enableStatistics(); // Tracing needs statistics
+                }
+            }
 
             /** persist the proxy only if it is not deployed from an artifact container */
             if (proxy.getArtifactContainerName() == null) {
@@ -197,7 +207,15 @@ public class ProxyServiceAdmin extends AbstractServiceBusAdmin {
             lock.lock();
 
             ProxyService proxy = getSynapseConfiguration().getProxyService(proxyName);
-            proxy.setTraceState(SynapseConstants.TRACING_OFF);
+            if (proxy != null) {
+                if (proxy.getAspectConfiguration() == null) {
+                    AspectConfiguration config = new AspectConfiguration(proxyName);
+                    config.disableTracing();
+                    proxy.configure(config);
+                } else {
+                    proxy.getAspectConfiguration().disableTracing();
+                }
+            }
 
             /** persist the proxy only if it is not deployed from an artifact container */
             if (proxy.getArtifactContainerName() == null) {
@@ -322,7 +340,7 @@ public class ProxyServiceAdmin extends AbstractServiceBusAdmin {
                 } else {
                     log.debug("Deleting existing proxy service : " + proxyName);
                     AxisService axisService = synapseConfig.getAxisConfiguration().
-                            getService(proxyName);
+                            getServiceForActivation(proxyName);
                     if (axisService != null) {
                         wasRunning = axisService.isActive();
                         axisService.getParent().addParameter(
@@ -340,10 +358,10 @@ public class ProxyServiceAdmin extends AbstractServiceBusAdmin {
 
                         if (!wasRunning &&
                                 synapseConfig.getProxyService(proxyName).isRunning()) {
-                            synapseConfig.getProxyService(proxyName).stop(synapseConfig);
+                            stopProxyService(proxyName);
                         } else if (wasRunning &&
                                 !synapseConfig.getProxyService(proxyName).isRunning()) {
-                            synapseConfig.getProxyService(proxyName).start(synapseConfig);
+                            startProxyService(proxyName);
                         }
 
                         ProxyService proxy = synapseConfig.getProxyService(proxyName);
@@ -734,9 +752,10 @@ public class ProxyServiceAdmin extends AbstractServiceBusAdmin {
         } else {
             pd.setEnableStatistics(false);
         }
-        if (ps.getTraceState() == SynapseConstants.TRACING_ON) {
+        if (ps.getAspectConfiguration() != null
+                && ps.getAspectConfiguration().isTracingEnabled()) {
             pd.setEnableTracing(true);
-        } else if (ps.getTraceState() == SynapseConstants.TRACING_OFF) {
+        } else {
             pd.setEnableTracing(false);
         }
         if (ps.getWsdlURI() != null ||
@@ -911,9 +930,11 @@ public class ProxyServiceAdmin extends AbstractServiceBusAdmin {
      */
     private void addParameterObserver(String serviceName) throws AxisFault {
         AxisService service = getAxisConfig().getService(serviceName);
-        ProxyServiceParameterObserver paramObserver =
-                new ProxyServiceParameterObserver(service);
-        service.addParameterObserver(paramObserver);
+        if (service != null) {
+            ProxyServiceParameterObserver paramObserver =
+                       new ProxyServiceParameterObserver(service);
+            service.addParameterObserver(paramObserver);
+        }
     }
 
     public void persistProxyService(ProxyService proxy) throws ProxyAdminException {

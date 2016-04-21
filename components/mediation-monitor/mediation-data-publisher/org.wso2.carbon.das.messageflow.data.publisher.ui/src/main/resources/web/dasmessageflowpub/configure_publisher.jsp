@@ -2,7 +2,7 @@
 <%@ taglib uri="http://wso2.org/projects/carbon/taglibs/carbontags.jar" prefix="carbon" %>
 <%@ page import="org.apache.axis2.context.ConfigurationContext" %>
 <%@ page import="org.wso2.carbon.CarbonConstants" %>
-<%@ page import="org.wso2.carbon.das.messageflow.data.publisher.stub.conf.MediationStatConfig" %>
+<%@ page import="org.wso2.carbon.das.messageflow.data.publisher.stub.conf.PublisherConfig" %>
 <%@ page import="org.wso2.carbon.das.messageflow.data.publisher.stub.conf.Property" %>
 <%@ page import="org.wso2.carbon.das.messageflow.data.publisher.ui.DASMessageFlowPublisherAdminClient" %>
 <%@ page import="org.wso2.carbon.ui.CarbonUIMessage" %>
@@ -36,7 +36,7 @@
     String cookie = (String) session.getAttribute(ServerConstants.ADMIN_SERVICE_COOKIE);
     DASMessageFlowPublisherAdminClient client = new DASMessageFlowPublisherAdminClient(
             cookie, backendServerURL, configContext, request.getLocale());
-    MediationStatConfig mediationStatConfig = new MediationStatConfig();
+    PublisherConfig mediationStatConfig = new PublisherConfig();
 
 
     if (action != null && action.equals("load") && serverId != null) {
@@ -57,59 +57,67 @@
 			    %>
 			    <jsp:include page="../admin/error.jsp"/>
 			    <%
-                }
             }
+        }
     }
 
     if (action != null && action.equals("save")) {
 
-        if (url != null) {
-            mediationStatConfig.setUrl(url);
-        }
-        if (userName != null) {
-            mediationStatConfig.setUserName(userName);
-        }
-        if (password != null) {
-            mediationStatConfig.setPassword(password);
-        }
-        if (publishingState != null) {
-        	mediationStatConfig.setMessageFlowPublishingEnabled(true);
-        }
+        if (url == "" || userName == "" || password == "") {
 
-        if (serverId != null) {
-        	mediationStatConfig.setServerId(serverId);
-        } else {
-        	serverId = String.valueOf("server_id_" + url.hashCode());
-        	mediationStatConfig.setServerId(serverId);
+        %>
+            <script type="text/javascript">
+               CARBON.showErrorDialog('Configuration Incomplete!');
+            </script>
+
+        <%
+
         }
+        else {
+
+            if (url != null) {
+                mediationStatConfig.setUrl(url);
+            }
+            if (userName != null) {
+                mediationStatConfig.setUserName(userName);
+            }
+            if (password != null) {
+                mediationStatConfig.setPassword(password);
+            }
+            if (publishingState != null) {
+                mediationStatConfig.setMessageFlowPublishingEnabled(true);
+            }
+
+            if (serverId != null) {
+                mediationStatConfig.setServerId(serverId);
+            } else {
+                serverId = String.valueOf("server_id_" + url.hashCode());
+                mediationStatConfig.setServerId(serverId);
+            }
 
 
-        try {
-            client.setEventingConfigData(mediationStatConfig);// TODO : temp for testing
+            try {
+                client.setEventingConfigData(mediationStatConfig);// TODO : temp for testing
 
-		%>
-		<script type="text/javascript">
-		    jQuery(document).init(function() {
-		        function handleOK() {
-		
-		        }
-		
-		        CARBON.showInfoDialog("Eventing Configuration Successfully Updated!", handleOK);
-		    });
-		</script>
-		<%
-		} catch (Exception e) {
-	    if (e.getCause().getMessage().toLowerCase().indexOf("you are not authorized") == -1) {
-	        response.setStatus(500);
-	        CarbonUIMessage uiMsg = new CarbonUIMessage(CarbonUIMessage.ERROR, e.getMessage(), e);
-	        session.setAttribute(CarbonUIMessage.ID, uiMsg);
-		%>
-		<jsp:include page="../admin/error.jsp"/>
-		<%
-	        }
-	    }
+            %>
+            <script type="text/javascript">
+
+                    CARBON.showInfoDialog("DAS Configuration Successfully Saved!");
+
+            </script>
+            <%
+            } catch (Exception e) {
+            if (e.getCause().getMessage().toLowerCase().indexOf("you are not authorized") == -1) {
+                response.setStatus(500);
+                CarbonUIMessage uiMsg = new CarbonUIMessage(CarbonUIMessage.ERROR, e.getMessage(), e);
+                session.setAttribute(CarbonUIMessage.ID, uiMsg);
+            %>
+            <jsp:include page="../admin/error.jsp"/>
+            <%
+                }
+            }
     	
-    	
+    	}
     	
     }
 
@@ -156,6 +164,13 @@
                         });
         }
     }
+
+    function showSaveSuccessful() {}
+
+    function showSavingFailure(){
+        CARBON.showErrorDialog('Configuration Incomplete!');
+    }
+
 </script>
 
 <div id="middle">
@@ -184,7 +199,10 @@
                 </thead>
 
                 <tr>
-                    <td><fmt:message key="das.url"/></td>
+                    <td>
+                        <fmt:message key="das.url"/>
+                        <span class="required">*</span>
+                    </td>
                     <td>
                         <input type="text" id="url" name="url" value="<%= (url != null) ? url : "" %>"/>
                         <input type="button" value="Test Server" onclick="testServer()"/>
@@ -192,11 +210,17 @@
                     </td>
                 </tr>
                 <tr>
-                    <td><fmt:message key="username"/></td>
+                    <td>
+                        <fmt:message key="username"/>
+                        <span class="required">*</span>
+                    </td>
                     <td><input type="text" name="user_name" value="<%= (userName != null) ? userName : "" %>"/></td>
                 </tr>
                 <tr>
-                    <td><fmt:message key="password"/></td>
+                    <td>
+                        <fmt:message key="password"/>
+                        <span class="required">*</span>
+                    </td>
                     <td><input type="password" name="password" value="<%= (password != null) ? password : "" %>"/></td>
                 </tr>
                 

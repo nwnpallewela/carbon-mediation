@@ -20,12 +20,12 @@
     <parent>
         <groupId>org.wso2.carbon.mediation</groupId>
         <artifactId>bam-mediator</artifactId>
-        <version>4.6.1-BETA-SNAPSHOT</version>
+        <version>4.6.1-SNAPSHOT</version>
     </parent>
 
     <modelVersion>4.0.0</modelVersion>
     <artifactId>org.wso2.carbon.mediator.bam</artifactId>
-    <version>4.6.1-BETA-SNAPSHOT</version>
+    <version>4.6.1-SNAPSHOT</version>
     <packaging>bundle</packaging>    
     <name>WSO2 Carbon - BAM mediator</name>
     <url>http://wso2.org</url>
@@ -70,12 +70,12 @@
             <artifactId>synapse-core</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.wso2.carbon.commons</groupId>
+            <groupId>org.wso2.carbon.analytics-common</groupId>
             <artifactId>org.wso2.carbon.databridge.commons</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.wso2.carbon.commons</groupId>
-            <artifactId>org.wso2.carbon.databridge.agent.thrift</artifactId>
+            <groupId>org.wso2.carbon.analytics-common</groupId>
+            <artifactId>org.wso2.carbon.databridge.agent</artifactId>
         </dependency>
         <!--dependency>
             <groupId>commons-pool.wso2</groupId>
