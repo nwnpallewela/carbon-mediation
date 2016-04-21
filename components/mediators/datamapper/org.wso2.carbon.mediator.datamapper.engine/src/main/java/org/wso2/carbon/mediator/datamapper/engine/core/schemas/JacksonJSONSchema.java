@@ -40,11 +40,6 @@ import static org.wso2.carbon.mediator.datamapper.engine.utils.DataMapperEngineC
  */
 public class JacksonJSONSchema implements Schema {
 
-    private static final Log log = LogFactory.getLog(JacksonJSONSchema.class);
-    private static final String EMPTY_STRING = "";
-    private static final String NAMESPACE_NAME_CONCAT_STRING = ":";
-    private Map jsonSchemaMap;
-
     private static final String PROPERTIES_KEY = "properties";
     private static final String ATTRIBUTES_KEY = "attributes";
     private static final String NAMESPACE_KEY = "namespaces";
@@ -53,13 +48,21 @@ public class JacksonJSONSchema implements Schema {
     private static final String TYPE_KEY = "type";
     private static final String TITLE_KEY = "title";
     private static final String ITEMS_KEY = "items";
+
+    private static final Log log = LogFactory.getLog(JacksonJSONSchema.class);
+    private static final String EMPTY_STRING = "";
+    private static final String NAMESPACE_NAME_CONCAT_STRING = ":";
+    private static final String ELEMENT_NAME_SEPERATOR = "/";
+    private Map jsonSchemaMap;
     private Map<String, String> namespaceMap;
+    private Map<String, String> elementTypeMap;
     private boolean currentArrayIsPrimitive;
 
     public JacksonJSONSchema(InputStream inputSchema) throws SchemaException {
         ObjectMapper objectMapper = new ObjectMapper();
         try {
             jsonSchemaMap = objectMapper.readValue(inputSchema, Map.class);
+            elementTypeMap = new HashMap<>();
         } catch (IOException e) {
             throw new SchemaException("Error while reading input stream. " + e.getMessage());
         }
@@ -93,14 +96,32 @@ public class JacksonJSONSchema implements Schema {
 
     @Override public String getElementTypeByName(List<SchemaElement> elementStack)
             throws InvalidPayloadException, SchemaException {
+        String elementKey = getElementKey(elementStack);
+        if (elementTypeMap.containsKey(elementKey)) {
+            return elementTypeMap.get(elementKey);
+        } else {
+            return getElementTypeFromSchema(elementStack, elementKey);
+        }
+    }
+
+    private String getElementKey(List<SchemaElement> elementStack) throws InvalidPayloadException {
+        StringBuilder keyBuilder = new StringBuilder();
+        for (SchemaElement element : elementStack) {
+            keyBuilder.append(ELEMENT_NAME_SEPERATOR)
+                    .append(getNamespaceAddedFieldName(element.getNamespace(), element.getElementName()));
+        }
+        return keyBuilder.toString();
+    }
+
+    private String getElementTypeFromSchema(List<SchemaElement> elementStack, String elementKey)
+            throws InvalidPayloadException, SchemaException {
         Map<String, Object> schema = jsonSchemaMap;
         String elementType = null;
-        boolean elementFound = false;
+        boolean elementFound;
         for (SchemaElement element : elementStack) {
             elementFound = false;
             String elementName = element.getElementName();
-            String elementNamespace = element.getNamespace();
-            elementName = getNamespaceAddedFieldName(elementNamespace, elementName);
+            elementName = getNamespaceAddedFieldName(element.getNamespace(), elementName);
             if (elementName.equals(getName())) {
                 schema = (Map<String, Object>) jsonSchemaMap.get(PROPERTIES_KEY);
                 elementType = (String) jsonSchemaMap.get(TYPE_KEY);
@@ -125,6 +146,7 @@ public class JacksonJSONSchema implements Schema {
                 throw new IllegalArgumentException("Element name not found : " + elementName);
             }
         }
+        elementTypeMap.put(elementKey, elementType);
         return elementType;
     }
 
@@ -334,9 +356,8 @@ public class JacksonJSONSchema implements Schema {
         }
     }
 
-   @Override
-   public boolean isCurrentArrayIsPrimitive() {
-       return currentArrayIsPrimitive;
+    @Override public boolean isCurrentArrayIsPrimitive() {
+        return currentArrayIsPrimitive;
     }
 
     private String getNamespaceAddedFieldName(String uri, String localName) throws InvalidPayloadException {
